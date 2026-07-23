@@ -48,9 +48,18 @@ function resolvePaneId(context, tabId) {
   return null;
 }
 
+// A ticket key (e.g. "BMS-3831") is the single most useful identifier in a
+// title, and worth keeping whole even if it isn't near the start — a blind
+// character cut can chop it off entirely (e.g. "Start work on BMS-3831").
+const TICKET_KEY = /\b[A-Z][A-Z0-9]+-\d+\b/;
+
 // Keep it short so it actually fits in a tab bar, e.g.
-// "Fix the auth bug" -> "Fix the auth bu…".
+// "Fix the auth bug" -> "Fix the auth bu…". Prefers a ticket key over a
+// plain character cut when the title has one.
 function truncate(text) {
+  const ticketKey = text.match(TICKET_KEY)?.[0];
+  if (ticketKey) return ticketKey;
+
   if (text.length <= MAX_LABEL_LENGTH) return text;
   return `${text.slice(0, MAX_LABEL_LENGTH - 1)}…`;
 }

@@ -7,11 +7,16 @@ numbering.
 - No agent yet, or the agent hasn't picked a real task yet (e.g. right after
   typing `claude`, before it sets a task-specific title) → labeled `new`.
 - Once an agent sets a real descriptive terminal title (the OSC title
-  Claude Code and similar CLIs use, e.g. "Fix the auth bug") → the tab is
-  renamed to the first 16 characters of that title (e.g. `Fix the auth bu…`),
-  then **locked**. Later invocations for that tab are no-ops, even if the
+  Claude Code and similar CLIs use) → the tab is renamed from it, then
+  **locked**. Later invocations for that tab are no-ops, even if the
   agent's title changes to describe a different task later — the tab
   keeps its first-assigned name rather than constantly re-labeling itself.
+  - If the title contains a ticket key (e.g. `BMS-3831`), that's used as
+    the label on its own — it's the single most useful identifier, and
+    worth keeping whole even if it isn't near the start of the title
+    (e.g. "Start work on BMS-3831" → `BMS-3831`, not a truncated prefix).
+  - Otherwise, the label is the first 16 characters of the title (e.g.
+    "Fix the auth bug" → `Fix the auth bu…`).
 - Fires on `tab.created`, `pane.agent_detected`, and
   `pane.agent_status_changed`. Also exposes a manual action ("Rename Tab
   (auto)") that runs the same logic on demand — useful since the lock means
@@ -63,8 +68,10 @@ a task title when all of these hold:
 - It doesn't look like a filesystem path (contains `\` or `/`) — that's a
   plain shell's default title, not a task description.
 
-Labels are capped at 16 characters (`truncate()` in `index.js`), a flat
-character cut with an ellipsis — no word-boundary logic.
+Labels are capped at 16 characters (`truncate()` in `index.js`) — a flat
+character cut with an ellipsis, no word-boundary logic — unless the title
+contains a ticket key (`TICKET_KEY` regex: `[A-Z][A-Z0-9]+-\d+`), in which
+case the ticket key alone is used regardless of length or position.
 
 The "don't rename again" lock is a marker file per tab id under
 `HERDR_PLUGIN_STATE_DIR` (`v1`: no Herdr-managed plugin storage API, so
