@@ -2,7 +2,7 @@ id = "autotab"
 name = "Auto Tab Namer"
 version = "0.1.0"
 min_herdr_version = "0.1.0"
-description = "Automatically renames tabs to the working directory / git branch instead of a plain number."
+description = "Automatically renames tabs to what the agent is currently doing, instead of a plain number."
 platforms = ["linux", "macos", "windows"]
 
 [[events]]
@@ -11,6 +11,10 @@ command = ["node", "index.js", "event"]
 
 [[events]]
 on = "pane.agent_detected"
+command = ["node", "index.js", "event"]
+
+[[events]]
+on = "pane.agent_status_changed"
 command = ["node", "index.js", "event"]
 
 [[actions]]

@@ -1,12 +1,19 @@
 # herdr-plugin-autotab
 
-Renames Herdr tabs to `<dir>[:<branch>][ · <agent>]` instead of leaving them as the
-default `1`, `2`, `3`... numbering.
+Renames Herdr tabs to reflect what the agent in them is actually doing,
+instead of leaving them as the default `1`, `2`, `3`... numbering.
 
-- Fires on `tab.created` and `pane.agent_detected` so a tab picks up a name as
-  soon as it's opened, and again once an agent is detected in it.
-- Also exposes a manual action ("Rename Tab (auto)") to re-run the same logic
-  on demand.
+- No agent yet (plain shell, or agent not yet detected) → labeled `new`.
+- Once an agent is attached and has set a terminal title (the OSC title
+  Claude Code and similar CLIs use to describe their current task, e.g.
+  "Create a herdr plugin") → the tab is renamed to that title **once**, then
+  locked. Later invocations for that tab are no-ops, even if the agent's
+  title changes to describe a different task later — the tab keeps its
+  first-assigned name rather than constantly re-labeling itself.
+- Fires on `tab.created`, `pane.agent_detected`, and
+  `pane.agent_status_changed`. Also exposes a manual action ("Rename Tab
+  (auto)") that runs the same logic on demand — useful since the lock means
+  automatic renames only ever happen once per tab.
 
 ## Install
 
@@ -22,29 +29,39 @@ Once pushed to GitHub with the `herdr-plugin` topic:
 herdr plugin install <owner>/herdr-plugin-autotab
 ```
 
-## Verified
+## How it works
 
 `HERDR_PLUGIN_CONTEXT_JSON` is the flat `PluginInvocationContext` shape from
-`herdr api schema --json` — `tab_id`, `focused_pane_cwd`, `focused_pane_agent`,
-`worktree.repo_name`/`checkout_path`, `workspace_cwd` (not nested under
-`tab`/`pane`/`agent` keys, which was an earlier wrong guess). Confirmed by
-simulating a real context payload against a live tab: the rename applied
-correctly.
+`herdr api schema --json` — `tab_id`, `focused_pane_id`, `focused_pane_cwd`,
+`focused_pane_agent`, `worktree.repo_name`/`checkout_path`, `workspace_cwd`
+(not nested under `tab`/`pane`/`agent` keys, which was an earlier wrong
+guess before checking the schema).
+
+`terminal_title_stripped` from `herdr pane get <pane_id>` is only trusted
+when the pane actually has an `agent` field set — a plain shell's title is
+just its executable path (e.g. `powershell.exe`), not a useful label.
+
+The "don't rename again" lock is a marker file per tab id under
+`HERDR_PLUGIN_STATE_DIR` (`v1`: no Herdr-managed plugin storage API, so
+plugins own their own state). Only writing to it once a real task title is
+known — the `new` fallback never locks, so a tab keeps getting checked until
+an agent shows up.
 
 Action ids can't contain dots — only letters, digits, `:`, `_`, `-`. That's
 why the action is `autotab:rename`, not `autotab.rename` (the latter fails
 `herdr plugin link` with `invalid_plugin_action_id`).
 
-## Known issue: event dispatch not firing (Herdr 0.7.4-preview)
+## Known issue: event dispatch didn't fire on 0.7.4-preview
 
-On `0.7.4-preview.2026-07-17-813fec141faa`, the `tab.created` /
-`pane.agent_detected` event hooks never actually invoke the plugin command —
-`herdr-server.log` shows zero dispatch attempts even after `herdr server
-reload-config` and a full server restart, while `herdr tab create` and
-`herdr tab rename` themselves work fine and are logged. The manual
-`autotab:rename` action and the rename logic itself are confirmed working
-(see above); only the automatic event-triggered path is unverified live.
-Worth re-testing on `0.7.5-preview` or later — run `herdr update --handoff`
-from a terminal that is NOT itself running inside a herdr pane (check for
-`HERDR_ENV` in the shell's env; `herdr update` refuses while any client,
-including the invoking shell itself, is attached).
+On `0.7.4-preview.2026-07-17-813fec141faa`, none of the event hooks ever
+invoked the plugin command — `herdr-server.log` showed zero dispatch
+attempts for any event type, even after `herdr server reload-config` and a
+full server restart. Updating to `0.7.5-preview.2026-07-21-0f10e1453a7f`
+fixed it — `tab.created` and `pane.agent_status_changed` both dispatch
+correctly there. If renames aren't happening on your install, check your
+Herdr version first.
+
+`herdr update` refuses to run from a shell that is itself attached to a
+herdr session (check for `HERDR_ENV=1` in that shell's env) — run it from a
+terminal that was never attached via `herdr`/`herdr session attach`, with
+`--handoff` to reduce disruption to the rest of the session.

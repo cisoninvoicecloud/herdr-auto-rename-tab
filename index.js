@@ -1,12 +1,15 @@
 "use strict";
 
-const { spawnSync, execSync } = require("node:child_process");
+const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
 const path = require("node:path");
 
 const herdr = process.env.HERDR_BIN_PATH ?? "herdr";
+const MAX_LABEL_LENGTH = 40;
+const stateDir = process.env.HERDR_PLUGIN_STATE_DIR;
 
 function herdrJson(args) {
-  const result = spawnSync(herdr, [...args, "--json"], { encoding: "utf8" });
+  const result = spawnSync(herdr, args, { encoding: "utf8" });
   if (result.status !== 0 || !result.stdout) return null;
   try {
     return JSON.parse(result.stdout);
@@ -24,56 +27,59 @@ function parseContext() {
 }
 
 // Field names confirmed against `herdr api schema --json`'s
-// PluginInvocationContext (this is the shape of HERDR_PLUGIN_CONTEXT_JSON) —
-// it's flat, not nested under "tab"/"pane" keys.
+// PluginInvocationContext (the shape of HERDR_PLUGIN_CONTEXT_JSON) — it's
+// flat, not nested under "tab"/"pane" keys.
 function firstDefined(...vals) {
   return vals.find((v) => v !== undefined && v !== null && v !== "");
 }
 
 function resolveTabId(context) {
-  return firstDefined(process.env.HERDR_TAB_ID, context.tab_id);
+  return firstDefined(context.tab_id, process.env.HERDR_TAB_ID);
 }
 
-function resolveCwd(context, tabId) {
-  const fromContext = firstDefined(
-    context.focused_pane_cwd,
-    context.worktree?.checkout_path,
-    context.workspace_cwd,
-  );
+function resolvePaneId(context, tabId) {
+  const fromContext = firstDefined(context.focused_pane_id, process.env.HERDR_PANE_ID);
   if (fromContext) return fromContext;
 
   if (tabId) {
     const info = herdrJson(["tab", "get", tabId]);
-    const cwd = firstDefined(info?.result?.root_pane?.cwd);
-    if (cwd) return cwd;
+    return firstDefined(info?.result?.root_pane?.pane_id);
   }
   return null;
 }
 
-function resolveAgentName(context) {
-  return firstDefined(context.focused_pane_agent);
+function truncate(text) {
+  if (text.length <= MAX_LABEL_LENGTH) return text;
+  return `${text.slice(0, MAX_LABEL_LENGTH - 1)}…`;
 }
 
-function gitBranch(cwd) {
-  try {
-    return execSync("git rev-parse --abbrev-ref HEAD", {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-  } catch {
-    return null;
-  }
+// What the agent itself says it's doing right now (Claude Code and similar
+// CLIs set this via an OSC terminal-title escape sequence as they work). Only
+// trust it when an agent is actually attached to the pane — a plain shell's
+// title is just its executable path, not useful as a tab label.
+function resolveTaskTitle(pane) {
+  if (!pane?.agent) return null;
+  const title = pane.terminal_title_stripped;
+  return title ? truncate(title.trim()) : null;
 }
 
-function buildLabel(cwd, repoName, agentName) {
-  if (!cwd && !repoName) return agentName || null;
-  const dirName = repoName || path.basename(cwd);
-  const branch = cwd ? gitBranch(cwd) : null;
+// Once a tab has been renamed to a real task title, leave it alone — don't
+// keep re-renaming it as the agent's title drifts across later tasks.
+function lockPath(tabId) {
+  if (!stateDir) return null;
+  return path.join(stateDir, `${tabId.replace(/[^a-zA-Z0-9_-]/g, "_")}.locked`);
+}
 
-  let label = branch && branch !== "HEAD" ? `${dirName}:${branch}` : dirName;
-  if (agentName) label = `${label} · ${agentName}`;
-  return label;
+function isLocked(tabId) {
+  const file = lockPath(tabId);
+  return file ? fs.existsSync(file) : false;
+}
+
+function lock(tabId) {
+  const file = lockPath(tabId);
+  if (!file) return;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "");
 }
 
 function main() {
@@ -85,24 +91,26 @@ function main() {
     return;
   }
 
-  const cwd = resolveCwd(context, tabId);
-  const repoName = context.worktree?.repo_name;
-  const agentName = resolveAgentName(context);
-  const label = buildLabel(cwd, repoName, agentName);
+  if (isLocked(tabId)) return;
 
-  if (!label) {
-    process.stderr.write("autotab: could not determine a label, skipping rename\n");
-    return;
+  const paneId = resolvePaneId(context, tabId);
+  const pane = paneId ? herdrJson(["pane", "get", paneId])?.result?.pane : null;
+  const taskTitle = resolveTaskTitle(pane);
+  const label = taskTitle || "new";
+
+  const current = herdrJson(["tab", "get", tabId])?.result?.tab?.label;
+  if (current !== label) {
+    const result = spawnSync(herdr, ["tab", "rename", tabId, label], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    if (result.status !== 0) {
+      process.stderr.write(`autotab: rename failed: ${result.stderr}\n`);
+      return;
+    }
   }
 
-  const result = spawnSync(herdr, ["tab", "rename", tabId, label], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-
-  if (result.status !== 0) {
-    process.stderr.write(`autotab: rename failed: ${result.stderr}\n`);
-  }
+  if (taskTitle) lock(tabId);
 }
 
 main();
