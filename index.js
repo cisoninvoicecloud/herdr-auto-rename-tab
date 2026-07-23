@@ -23,59 +23,35 @@ function parseContext() {
   }
 }
 
-function parseEvent() {
-  try {
-    return JSON.parse(process.env.HERDR_PLUGIN_EVENT_JSON || "{}");
-  } catch {
-    return {};
-  }
-}
-
-// Best-effort extraction — field names aren't fully documented, so try a
-// handful of plausible shapes rather than assuming one.
+// Field names confirmed against `herdr api schema --json`'s
+// PluginInvocationContext (this is the shape of HERDR_PLUGIN_CONTEXT_JSON) —
+// it's flat, not nested under "tab"/"pane" keys.
 function firstDefined(...vals) {
   return vals.find((v) => v !== undefined && v !== null && v !== "");
 }
 
-function resolveTabId(context, event) {
-  return firstDefined(
-    process.env.HERDR_TAB_ID,
-    context.tab?.tab_id,
-    context.tab_id,
-    event.tab?.tab_id,
-    event.tab_id,
-  );
+function resolveTabId(context) {
+  return firstDefined(process.env.HERDR_TAB_ID, context.tab_id);
 }
 
-function resolveCwd(context, event, tabId) {
+function resolveCwd(context, tabId) {
   const fromContext = firstDefined(
-    context.pane?.cwd,
-    context.worktree?.path,
-    context.cwd,
-    event.pane?.cwd,
-    event.cwd,
+    context.focused_pane_cwd,
+    context.worktree?.checkout_path,
+    context.workspace_cwd,
   );
   if (fromContext) return fromContext;
 
   if (tabId) {
     const info = herdrJson(["tab", "get", tabId]);
-    const cwd = firstDefined(
-      info?.result?.root_pane?.cwd,
-      info?.result?.tab?.cwd,
-      info?.result?.cwd,
-    );
+    const cwd = firstDefined(info?.result?.root_pane?.cwd);
     if (cwd) return cwd;
   }
   return null;
 }
 
-function resolveAgentName(context, event) {
-  return firstDefined(
-    context.agent?.name,
-    context.pane?.agent,
-    event.agent?.name,
-    event.pane?.agent_name,
-  );
+function resolveAgentName(context) {
+  return firstDefined(context.focused_pane_agent);
 }
 
 function gitBranch(cwd) {
@@ -90,10 +66,10 @@ function gitBranch(cwd) {
   }
 }
 
-function buildLabel(cwd, agentName) {
-  if (!cwd) return agentName || null;
-  const dirName = path.basename(cwd);
-  const branch = gitBranch(cwd);
+function buildLabel(cwd, repoName, agentName) {
+  if (!cwd && !repoName) return agentName || null;
+  const dirName = repoName || path.basename(cwd);
+  const branch = cwd ? gitBranch(cwd) : null;
 
   let label = branch && branch !== "HEAD" ? `${dirName}:${branch}` : dirName;
   if (agentName) label = `${label} · ${agentName}`;
@@ -102,17 +78,17 @@ function buildLabel(cwd, agentName) {
 
 function main() {
   const context = parseContext();
-  const event = parseEvent();
 
-  const tabId = resolveTabId(context, event);
+  const tabId = resolveTabId(context);
   if (!tabId) {
     process.stderr.write("autotab: no tab id available, skipping rename\n");
     return;
   }
 
-  const cwd = resolveCwd(context, event, tabId);
-  const agentName = resolveAgentName(context, event);
-  const label = buildLabel(cwd, agentName);
+  const cwd = resolveCwd(context, tabId);
+  const repoName = context.worktree?.repo_name;
+  const agentName = resolveAgentName(context);
+  const label = buildLabel(cwd, repoName, agentName);
 
   if (!label) {
     process.stderr.write("autotab: could not determine a label, skipping rename\n");
