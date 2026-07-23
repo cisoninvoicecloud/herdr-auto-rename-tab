@@ -53,14 +53,27 @@ function truncate(text) {
   return `${text.slice(0, MAX_LABEL_LENGTH - 1)}…`;
 }
 
+// Titles an agent shows before it's picked a real task — just its own name,
+// not a description of what it's doing. Locking onto these would freeze the
+// tab at "claude" forever, since that's the very first title Claude Code
+// sets on startup, before the real task title replaces it.
+const GENERIC_TITLES = new Set(["claude", "claude code"]);
+
 // What the agent itself says it's doing right now (Claude Code and similar
 // CLIs set this via an OSC terminal-title escape sequence as they work). Only
 // trust it when an agent is actually attached to the pane — a plain shell's
-// title is just its executable path, not useful as a tab label.
+// title is just its executable path, not useful as a tab label — and only
+// once it's past the generic startup title.
 function resolveTaskTitle(pane) {
   if (!pane?.agent) return null;
-  const title = pane.terminal_title_stripped;
-  return title ? truncate(title.trim()) : null;
+  const title = pane.terminal_title_stripped?.trim();
+  if (!title) return null;
+
+  const normalized = title.toLowerCase();
+  if (normalized === pane.agent.toLowerCase() || GENERIC_TITLES.has(normalized)) {
+    return null;
+  }
+  return truncate(title);
 }
 
 // Once a tab has been renamed to a real task title, leave it alone — don't
