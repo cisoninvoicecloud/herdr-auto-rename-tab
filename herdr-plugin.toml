@@ -1,0 +1,20 @@
+id = "autotab"
+name = "Auto Tab Namer"
+version = "0.1.0"
+min_herdr_version = "0.1.0"
+description = "Automatically renames tabs to the working directory / git branch instead of a plain number."
+platforms = ["linux", "macos", "windows"]
+
+[[events]]
+on = "tab.created"
+command = ["node", "index.js", "event"]
+
+[[events]]
+on = "pane.agent_detected"
+command = ["node", "index.js", "event"]
+
+[[actions]]
+id = "autotab.rename"
+title = "Rename Tab (auto)"
+contexts = ["tab"]
+command = ["node", "index.js", "action"]
