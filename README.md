@@ -31,6 +31,19 @@ From GitHub:
 herdr plugin install cisoninvoicecloud/herdr-auto-rename-tab
 ```
 
+### Recommended: skip the "name this tab" prompt
+
+Herdr normally asks you to type a name every time you create a new tab
+(`ui.prompt_new_tab_name`, default `true`). Since this plugin names the tab
+for you once an agent starts, that prompt is redundant — add this to your
+`config.toml` (e.g. `%APPDATA%\herdr\config.toml` on Windows) and reload
+(`herdr server reload-config`):
+
+```toml
+[ui]
+prompt_new_tab_name = false
+```
+
 ## How it works
 
 `HERDR_PLUGIN_CONTEXT_JSON` is the flat `PluginInvocationContext` shape from
