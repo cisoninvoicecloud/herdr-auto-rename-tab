@@ -14,7 +14,7 @@ on = "pane.agent_detected"
 command = ["node", "index.js", "event"]
 
 [[actions]]
-id = "autotab.rename"
+id = "autotab:rename"
 title = "Rename Tab (auto)"
 contexts = ["tab"]
 command = ["node", "index.js", "action"]
