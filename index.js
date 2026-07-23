@@ -6,7 +6,6 @@ const path = require("node:path");
 
 const herdr = process.env.HERDR_BIN_PATH ?? "herdr";
 const MAX_LABEL_LENGTH = 16;
-const MAX_LABEL_WORDS = 2;
 const stateDir = process.env.HERDR_PLUGIN_STATE_DIR;
 
 function herdrJson(args) {
@@ -49,17 +48,11 @@ function resolvePaneId(context, tabId) {
   return null;
 }
 
-// Keep it to a word or two so it actually fits in a tab bar, e.g.
-// "Fix auth bug" -> "Fix auth". Drops whole words to fit the length budget
-// rather than chopping mid-word; only cuts inside a word if even the first
-// one alone is too long.
+// Keep it short so it actually fits in a tab bar, e.g.
+// "Fix the auth bug" -> "Fix the auth bu…".
 function truncate(text) {
-  const words = text.split(/\s+/).filter(Boolean).slice(0, MAX_LABEL_WORDS);
-  for (let count = words.length; count > 0; count--) {
-    const candidate = words.slice(0, count).join(" ");
-    if (candidate.length <= MAX_LABEL_LENGTH) return candidate;
-  }
-  return `${words[0].slice(0, MAX_LABEL_LENGTH - 1)}…`;
+  if (text.length <= MAX_LABEL_LENGTH) return text;
+  return `${text.slice(0, MAX_LABEL_LENGTH - 1)}…`;
 }
 
 // Titles an agent shows before it's picked a real task — just its own name,

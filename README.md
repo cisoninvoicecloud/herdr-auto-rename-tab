@@ -7,9 +7,9 @@ numbering.
 - No agent yet, or the agent hasn't picked a real task yet (e.g. right after
   typing `claude`, before it sets a task-specific title) → labeled `new`.
 - Once an agent sets a real descriptive terminal title (the OSC title
-  Claude Code and similar CLIs use, e.g. "Fix auth bug") → the tab is
-  renamed to the first word or two of that title (e.g. `Fix auth`), then
-  **locked**. Later invocations for that tab are no-ops, even if the
+  Claude Code and similar CLIs use, e.g. "Fix the auth bug") → the tab is
+  renamed to the first 16 characters of that title (e.g. `Fix the auth bu…`),
+  then **locked**. Later invocations for that tab are no-ops, even if the
   agent's title changes to describe a different task later — the tab
   keeps its first-assigned name rather than constantly re-labeling itself.
 - Fires on `tab.created`, `pane.agent_detected`, and
@@ -50,8 +50,8 @@ a task title when all of these hold:
 - It doesn't look like a filesystem path (contains `\` or `/`) — that's a
   plain shell's default title, not a task description.
 
-Labels are capped at two words / 16 characters (`truncate()` in
-`index.js`), dropping whole words to fit rather than cutting mid-word.
+Labels are capped at 16 characters (`truncate()` in `index.js`), a flat
+character cut with an ellipsis — no word-boundary logic.
 
 The "don't rename again" lock is a marker file per tab id under
 `HERDR_PLUGIN_STATE_DIR` (`v1`: no Herdr-managed plugin storage API, so
